@@ -15,18 +15,12 @@ jobs:
     steps:
       - checkout
       - run:
-          name: install package dependencies
-          command: |
-            sudo apt-get update -q
-            # install chromium-browser in order to ensure we have most of the
-            # dependecies for chrome.
-            EXTRA_CHROME_DEPS="lsb-release fonts-liberation libappindicator3-1"
-            sudo apt-get install -q -y unzip xvfb chromium-browser openjdk-8-jre-headless $EXTRA_CHROME_DEPS
-      - run:
-          name: download chrome
-          command: |
-            wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-            sudo dpkg -i google-chrome-stable_current_amd64.deb
+          sudo apt-get update
+          sudo apt-get install lsb-release libappindicator3-1
+          curl -L -o google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i google-chrome.deb
+          sudo sed -i 's|HERE/chrome"|HERE/chrome" --no-sandbox|g' /opt/google/chrome/google-chrome
+          rm google-chrome.deb
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
