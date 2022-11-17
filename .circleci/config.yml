@@ -1,37 +1,79 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine.
-# See: https://circleci.com/docs/2.0/configuration-reference
 version: 2.1
-
-# Define a job to be invoked later in a workflow.
-# See: https://circleci.com/docs/2.0/configuration-reference/#jobs
 jobs:
-  say-hello:
-    # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
-    # See: https://circleci.com/docs/2.0/configuration-reference/#docker-machine-macos-windows-executor
+  build:
     machine:
-      image: ubuntu-2004:202107-02
-    # Add steps to the job
-    # See: https://circleci.com/docs/2.0/configuration-reference/#steps
+      image: circleci/classic:latest
     steps:
       - checkout
       - run:
-          name: install package dependencies
-          command: |
+          name: Installing prerequisites
+          command: |-
+            curl -sL https://deb.nodesource.com/setup_14.x | sudo -E bash -
+            node --version
+      - run:
+          name: run build file
+          command: /bin/bash -x build.sh ${CIRCLE_SHA1} test
+  test-cases:
+    working_directory: ~/portal/src/app/client
+    machine:
+      image: ubuntu-2004:202107-02
+    steps:
+      - checkout:
+          path: ~/portal
+      - run: 
+          name: Installing prerequisites
+          command: |-
+            sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6DB5542C356545CF # Adding Heroku keys, else the apt update will fail.
             sudo apt-get update && sudo apt install -y ca-certificates libxpm4 libxrender1 libgtk2.0-0 libnss3 libgconf-2-4 \
                   xvfb gtk2-engines-pixbuf \
                   xfonts-cyrillic xfonts-100dpi xfonts-75dpi xfonts-base xfonts-scalable
             curl -sL https://deb.nodesource.com/setup_14.x | sudo -E bash -
-            sudo echo "deb http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee -a /etc/apt/sources.list
+            sudo echo "deb http://dl.google.com/linux/chrome/deb/ stable main" | tee -a /etc/apt/sources.list
             # Fetch Chrome's PGP keys for secure installation
             wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
             # Update aptitude's package sources
             sudo apt-get -qq update -y
             # Install latest Chrome stable, Xvfb packages
             sudo apt-get -qq install -y google-chrome-stable xvfb gtk2-engines-pixbuf xfonts-cyrillic xfonts-100dpi xfonts-75dpi xfonts-base xfonts-scalable imagemagick x11-apps default-jre
-            which google-chrome
-# Invoke jobs via workflows
-# See: https://circleci.com/docs/2.0/configuration-reference/#workflows
+            # Launch Xvfb
+            Xvfb :0 -ac -screen 0 1024x768x24 &
+            # Export display for Chrome
+            export DISPLAY=:99
+            sudo apt install nodejs -y
+            node --version
+      - run:
+          name: Installing angular cli
+          command: 'npm install -g @angular/cli@10.2.4 --no-progress'
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+      - run:
+          name: Installing npm deps
+          command: 'npm install --no-progress --legacy-peer-deps'
+      - save_cache: # special step to save the dependency cache
+          key: dependency-cache-{{ checksum "package.json" }}
+          paths: ./node_modules
+      - run:
+          name: ng lint and building
+          command: 'mkdir -p /tmp/logs && node --max_old_space_size=6000 ./node_modules/@angular/cli/bin/ng build --prod --optimization=false --buildOptimizer=false | tee /tmp/logs/build.log'
+      - run:
+          name: Executing test cases
+          command: 'npm run test-coverage | tee /tmp/logs/test_cases.log'
+      - run:
+          name: Install  Node.js v14.20.1 with build in nvm tool
+          command: |
+            export NVM_DIR="/opt/circleci/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      - run:
+          name: Altered Node version
+          command: 'node --version'
+      - run:
+          name: install sonar scanner
+          command: npm install -g sonarqube-scanner
+      - run:
+         name: run sonar scanner
+         command: 'cd ~/portal && sonar-scanner'
 workflows:
-  say-hello-workflow:
+  version: 2
+  build_and_test:
     jobs:
-      - say-hello
+      - test-cases
